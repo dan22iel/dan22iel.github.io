@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prueba</title>
+    <!-- <script src="https://files.cdn.printful.com/embed/embed.js"></script> -->
+</head>
+
+<body>
+    <h2>Prueba</h2>
+    <div id="tool"></div>
+    <script>
+        class PFDesignMaker {
+            par;
+            iframeNode;
+            loadingNode;
+            allLoaded = false;
+            messageListenerBinded;
+
+            #e = "/embedded-designer";
+            #s = "https://www.printful.com";
+            #i = "OK";
+            #a = "Failed";
+
+            #t = {
+                SET_PRODUCT: "setProduct",
+                SAVE_DESIGN: "saveDesign",
+                LOAD_TEMPLATE: "loadTemplate",
+                SET_STYLE: "setStyle",
+                SET_FEATURE_CONFIG: "setFeatureConfig",
+                SET_GENERIC_CONFIG: "setGenericConfig",
+                SET_DISABLED_PLACEMENTS: "setDisabledPlacements",
+                SET_PRESELECTED_COLORS: "setPreselectedColors",
+                SET_PRESELECTED_SIZES: "setPreselectedSizes",
+                SET_DISABLED_COLORS: "setDisabledColors",
+                SET_DISABLED_SIZES: "setDisabledSizes",
+                SET_URL_IMAGE_LAYER: "setUrlImageLayer",
+                SET_STEPS: "setSteps",
+                INVALID_ORIGIN: "invalidOrigin",
+                IFRAME_LOADED: "iframeLoaded",
+                DESIGNER_LOADED: "designerLoaded",
+                DESIGN_STATUS: "designStatus",
+                PRICING_STATUS: "pricingStatus",
+                STEP_STATUS: "stepStatus",
+                DOWNLOAD_FILE: "downloadFile",
+                RPC_ERROR: "rpcError",
+                ON_FILE_PICKER_REQUESTED: "onFilePickerRequested",
+            };
+
+            constructor(e) {
+                console.log('por aqui paso Bolivar')
+                this.par = e;
+                this.par.origin ||= this.#s;
+
+                this.par.featureConfig = Object.assign(
+                    {
+                        clipart_layers: true,
+                        file_layers: true,
+                        text_layers: true,
+                        embroidery_3d_puff: true,
+                        has_color_group_inside_labels: false,
+                        sub_technique_switcher: false,
+                        has_external_user_file_library: false,
+                        initial_open_view: "file_layers",
+                    },
+                    this.par.featureConfig ?? {}
+                );
+
+                this.par.preselectedColors ??= [];
+                this.par.preselectedSizes ??= [];
+                this.par.debug &&= 1;
+
+                this.#r(() => {
+                    //this.#E();
+                    this.#d();
+                    this.#n();
+                });
+            }
+
+            sendMessage(e) {
+                this.par?.debug && console.log("sendMessage", e);
+                this.allLoaded = false;
+                this.showHideLoading();
+                this.iframeNode.contentWindow?.postMessage(e, this.par.origin);
+            }
+
+            removeEventListeners() {
+                if (this.messageListenerBinded) {
+                    window.removeEventListener("message", this.messageListenerBinded, false);
+                }
+            }
+
+            #r(e) {
+                if (document.readyState === "complete" || document.readyState === "interactive") {
+                    setTimeout(e, 1);
+                } else {
+                    document.addEventListener("DOMContentLoaded", e);
+                }
+            }
+
+            #d() {
+                this.messageListenerBinded = this.messageListener.bind(this);
+                window.addEventListener("message", this.messageListenerBinded, false);
+            }
+
+            messageListener(e) {
+                console.log("messageListener", e.data.event);
+
+                if (e.origin !== this.par.origin) {
+                    console.error("Incorrect event origin - does not match expected origin", e.origin, this.par.origin);
+                    return;
+                }
+
+                this.allLoaded = true;
+                this.showHideLoading();
+
+                switch (e.data.event) {
+                    case this.#t.IFRAME_LOADED + this.#i:
+                        if (!this.par.ignoreDesignerSetup) {
+                            this.#applySettings();
+                        }
+                        this.par.onIframeLoaded?.();
+                        break;
+
+                    case this.#t.DESIGNER_LOADED + this.#i:
+                        this.par.onProductChanged?.(e.data.productId);
+                        break;
+
+                    case this.#t.SAVE_DESIGN + this.#i:
+                        const templateId = e.data?.data?.response?.template?.id;
+                        this.par.onTemplateSaved?.(templateId);
+                        break;
+
+                    case this.#t.RPC_ERROR:
+                        console.error("RPC ERROR", e.data);
+                        this.#o(e);
+                        break;
+
+                    case this.#t.INVALID_ORIGIN:
+                        console.error("invalid origin", e.data);
+                        this.#o(e);
+                        break;
+
+                    case this.#t.DESIGN_STATUS:
+                        this.par.onDesignStatusUpdate?.(e.data?.data?.response);
+                        break;
+
+                    case this.#t.PRICING_STATUS:
+                        this.par.onPricingStatusUpdate?.(e.data?.data?.response);
+                        break;
+
+                    case this.#t.STEP_STATUS:
+                        this.par.onStepStatusUpdate?.(e.data?.data?.response);
+                        break;
+
+                    case this.#t.SET_PRODUCT + this.#i:
+                        if (this.par.applyImageFromUrl) {
+                            this.sendMessage({
+                                event: this.#t.SET_URL_IMAGE_LAYER,
+                                imageUrl: this.par.applyImageFromUrl,
+                            });
+                        }
+                        break;
+
+                    case this.#t.DOWNLOAD_FILE:
+                        this.#downloadFile(e.data.data);
+                        break;
+
+                    case this.#t.ON_FILE_PICKER_REQUESTED:
+                        this.par.onFilePickerRequested?.();
+                        break;
+                }
+            }
+
+            #applySettings() {
+                this.par.disabledPlacements?.length &&
+                    this.sendMessage({
+                        event: this.#t.SET_DISABLED_PLACEMENTS,
+                        disabledPlacements: this.par.disabledPlacements,
+                    });
+
+                this.sendMessage({ event: this.#t.SET_STYLE, style: this.par.style });
+                this.sendMessage({ event: this.#t.SET_FEATURE_CONFIG, featureConfig: this.par.featureConfig });
+                this.sendMessage({
+                    event: this.#t.SET_GENERIC_CONFIG,
+                    config: {
+                        livePricingConfig: this.par.livePricingConfig || {},
+                        isVariantSelectionDisabled: this.par.isVariantSelectionDisabled || false,
+                    },
+                });
+
+                this.par.preselectedColors?.length &&
+                    this.sendMessage({ event: this.#t.SET_PRESELECTED_COLORS, preselectedColors: this.par.preselectedColors });
+
+                this.par.preselectedSizes?.length &&
+                    this.sendMessage({ event: this.#t.SET_PRESELECTED_SIZES, preselectedSizes: this.par.preselectedSizes });
+
+                this.par.disabledColors?.length &&
+                    this.sendMessage({ event: this.#t.SET_DISABLED_COLORS, disabledColors: this.par.disabledColors });
+
+                this.par.disabledSizes?.length &&
+                    this.sendMessage({ event: this.#t.SET_DISABLED_SIZES, disabledSizes: this.par.disabledSizes });
+
+                this.par.steps?.length &&
+                    this.sendMessage({ event: this.#t.SET_STEPS, steps: this.par.steps });
+
+                this.par.initProduct
+                    ? this.sendMessage({ event: this.#t.SET_PRODUCT, ...this.par.initProduct })
+                    : this.sendMessage({ event: this.#t.LOAD_TEMPLATE });
+            }
+
+            #o(e) {
+                this.par.onError?.(e.data?.data?.response || e.data);
+            }
+
+            #n() {
+                this.iframeNode = document.createElement("iframe");
+                this.iframeNode.setAttribute("src", this.#l());
+                this.iframeNode.setAttribute("id", "design-maker-embed");
+
+                if (this.par.iframeClassName) {
+                    this.iframeNode.setAttribute("class", this.par.iframeClassName);
+                }
+
+                document.getElementById(this.par.elemId).appendChild(this.iframeNode);
+            }
+
+            #l() {
+                const params = [
+                    { urlKey: "nonce", parKey: "nonce" },
+                    { urlKey: "debug", parKey: "debug" },
+                    { urlKey: "locale", parKey: "locale" },
+                ];
+
+                let url = this.par.origin + this.#e;
+                params.forEach((param, index) => {
+                    if (this.par[param.parKey]) {
+                        url += (index === 0 ? "?" : "&") + `${param.urlKey}=${this.par[param.parKey]}`;
+                    }
+                });
+
+                console.info(url);
+                return url;
+            }
+
+            async #downloadFile(data) {
+                const { blobImage, downloadName } = data;
+                if (!blobImage || !downloadName) return;
+
+                const url = URL.createObjectURL(blobImage);
+                const anchor = document.createElement("a");
+                anchor.href = url;
+                anchor.download = downloadName;
+                document.body.appendChild(anchor);
+                anchor.click();
+                document.body.removeChild(anchor);
+                URL.revokeObjectURL(url);
+            }
+
+            showHideLoading(forceShow = false) {
+                this.loadingNode.style.display = this.allLoaded ? "none" : forceShow ? "block" : "none";
+            }
+        }
+
+
+
+
+        this.designMaker = new PFDesignMaker({
+            elemId: 'tool',
+            nonce: 'IDX8Ur1Inbw0GHmwlGFHRv2onh6FH484',
+            externalProductId: 'test_001',
+            initProduct: {
+                productId: 671,
+            },
+        });
+    </script>
+</body>
+
+</html>
