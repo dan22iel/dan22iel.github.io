@@ -103,6 +103,7 @@
             }
             
             messageListener(e) {
+                console.info("--->", e.origin, this.par.origin)
                 if (console.log("messageListener", e.data.event),
                 e.origin === this.par.origin)
                     switch (this.allLoaded = !0,
@@ -274,7 +275,7 @@
 
         this.designMaker = new PFDesignMaker({
             elemId: 'tool',
-            nonce: '6DpkfjvANONHxoQpceKnl3shQ8psi8ms',
+            nonce: 'Wbkldb61A3XhNK01xvtzs0junq6B4dcH',
             externalProductId: 'test_001',
             initProduct: {
                 productId: 671,
